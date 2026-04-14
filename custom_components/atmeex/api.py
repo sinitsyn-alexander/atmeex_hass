@@ -67,6 +67,8 @@ class AtmeexApi:
                     headers=headers,
                 )
 
+            _LOGGER.debug("Response status: %s for %s %s", response.status, method, url)
+
             if response.status == 401:
                 raise AtmeexAuthError("Authentication failed")
 
@@ -78,6 +80,16 @@ class AtmeexApi:
             response.raise_for_status()
 
             if response.status == 204:
+                return None
+
+            content_type = response.headers.get("Content-Type", "")
+            if "json" not in content_type:
+                _LOGGER.warning(
+                    "Unexpected Content-Type '%s' for %s %s, reading as text",
+                    content_type, method, url,
+                )
+                text = await response.text()
+                _LOGGER.debug("Response text: %s", text[:500])
                 return None
 
             return await response.json()

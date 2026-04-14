@@ -174,8 +174,14 @@ class AtmeexConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     phone=self._phone or "",
                     phone_code=user_input[CONF_PHONE_CODE],
                 )
-                # Get devices to verify connection
-                devices = await api.async_get_devices()
+
+                # Try to get devices to verify connection, but don't block on failure
+                try:
+                    devices = await api.async_get_devices()
+                    _LOGGER.debug("Devices fetched successfully: %s", devices)
+                except (AtmeexApiError, AtmeexAuthError) as err:
+                    _LOGGER.warning("Could not fetch devices during setup (non-fatal): %s", err)
+
                 await api.async_close()
 
                 return self.async_create_entry(
@@ -183,14 +189,14 @@ class AtmeexConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data={
                         CONF_AUTH_METHOD: AUTH_METHOD_PHONE,
                         CONF_PHONE: self._phone,
-                        CONF_PHONE_CODE: user_input[CONF_PHONE_CODE],
                         "access_token": api.access_token,
                         "refresh_token": api.tokens.get("refresh_token"),
                     },
                 )
             except AtmeexAuthError:
                 errors["base"] = "invalid_auth"
-            except AtmeexApiError:
+            except AtmeexApiError as err:
+                _LOGGER.error("API error during phone login: %s", err)
                 errors["base"] = "cannot_connect"
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
