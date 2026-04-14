@@ -101,6 +101,39 @@ class AtmeexApi:
         _LOGGER.info("Successfully authenticated via email")
         return result
 
+    async def async_send_sms_code(self, phone: str) -> None:
+        """Send SMS verification code to phone number.
+
+        Uses /auth/signup endpoint with grant_type=phone_code to trigger SMS.
+        Returns empty body on success (200 with text/html) — cannot use _request
+        because it expects JSON.
+        """
+        session = await self._get_session()
+        url = f"{API_BASE_URL}/auth/signup"
+        data = {
+            "grant_type": "phone_code",
+            "phone": phone,
+        }
+        headers = {"Content-Type": "application/json"}
+
+        _LOGGER.debug("Sending SMS code to %s via POST %s", phone, url)
+
+        try:
+            async with asyncio.timeout(30):
+                response = await session.post(url, json=data, headers=headers)
+
+            if response.status == 422:
+                resp_data = await response.json()
+                _LOGGER.error("SMS send validation error: %s", resp_data)
+                raise AtmeexApiError(f"Validation error: {resp_data}")
+
+            response.raise_for_status()
+            _LOGGER.info("SMS code sent to %s", phone)
+
+        except aiohttp.ClientError as err:
+            _LOGGER.error("SMS send request failed: %s", err)
+            raise AtmeexApiError(f"SMS send failed: {err}") from err
+
     async def async_login_phone(self, phone: str, phone_code: str) -> dict[str, Any]:
         """Authenticate with phone number and SMS code."""
         data = {

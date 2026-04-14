@@ -117,6 +117,36 @@ class AtmeexConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             self._phone = user_input[CONF_PHONE]
+            # Send SMS code via /auth/signup
+            try:
+                api = AtmeexApi(self.hass)
+                await api.async_send_sms_code(self._phone)
+                await api.async_close()
+            except AtmeexApiError:
+                errors["base"] = "sms_send_failed"
+                return self.async_show_form(
+                    step_id="phone",
+                    data_schema=vol.Schema(
+                        {
+                            vol.Required(CONF_PHONE, default=self._phone): str,
+                        }
+                    ),
+                    errors=errors,
+                    description_placeholders={},
+                )
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception sending SMS")
+                errors["base"] = "unknown"
+                return self.async_show_form(
+                    step_id="phone",
+                    data_schema=vol.Schema(
+                        {
+                            vol.Required(CONF_PHONE, default=self._phone): str,
+                        }
+                    ),
+                    errors=errors,
+                    description_placeholders={},
+                )
             # Proceed to the SMS code step
             return await self.async_step_phone_code()
 
