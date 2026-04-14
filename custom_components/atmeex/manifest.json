@@ -1,0 +1,11 @@
+{
+  "domain": "atmeex",
+  "name": "Atmeex Airnanny",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/atmeex/ha-atmeex",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/atmeex/ha-atmeex/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

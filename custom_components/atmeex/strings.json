@@ -1,0 +1,66 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Atmeex Airnanny",
+        "description": "Выберите способ авторизации",
+        "data": {
+          "auth_method": "Способ авторизации"
+        }
+      },
+      "email": {
+        "title": "Авторизация по Email",
+        "description": "Введите email и пароль от аккаунта Atmeex",
+        "data": {
+          "email": "Email",
+          "password": "Пароль"
+        }
+      },
+      "phone": {
+        "title": "Авторизация по телефону",
+        "description": "Введите номер телефона, на который будет отправлен SMS-код",
+        "data": {
+          "phone": "Номер телефона"
+        }
+      },
+      "phone_code": {
+        "title": "Введите SMS-код",
+        "description": "Введите код из SMS, отправленный на номер {phone}",
+        "data": {
+          "phone_code": "SMS-код"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Повторная авторизация",
+        "description": "Ваш токен истёк. Пожалуйста, введите email и пароль заново.",
+        "data": {
+          "email": "Email",
+          "password": "Пароль"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Не удалось подключиться к серверу Atmeex",
+      "invalid_auth": "Ошибка аутентификации: неверный email, пароль или код",
+      "unknown": "Непредвиденная ошибка"
+    },
+    "abort": {
+      "reauth_successful": "Повторная авторизация прошла успешно"
+    }
+  },
+  "entity": {
+    "climate": {
+      "atmeex": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "auto": "Авто",
+              "night": "Ночной",
+              "none": "Нет"
+            }
+          }
+        }
+      }
+    }
+  }
+}

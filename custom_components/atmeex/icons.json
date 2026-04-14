@@ -1,0 +1,38 @@
+{
+  "entity": {
+    "climate": {
+      "atmeex": {
+        "default": "mdi:air-conditioner"
+      }
+    },
+    "fan": {
+      "atmeex": {
+        "default": "mdi:fan"
+      }
+    },
+    "sensor": {
+      "co2": {
+        "default": "mdi:molecule-co2"
+      },
+      "temperature": {
+        "default": "mdi:thermometer"
+      },
+      "humidity": {
+        "default": "mdi:water-percent"
+      }
+    },
+    "binary_sensor": {
+      "connectivity": {
+        "default": "mdi:wifi"
+      },
+      "problem": {
+        "default": "mdi:water-off"
+      }
+    },
+    "switch": {
+      "atmeex": {
+        "default": "mdi:toggle-switch"
+      }
+    }
+  }
+}
