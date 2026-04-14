@@ -102,13 +102,13 @@ class AtmeexFan(CoordinatorEntity[AtmeexCoordinator], FanEntity):
             return "auto"
         return None
 
-    async def async_set_percentage(self, percentage_val: int) -> None:
+    async def async_set_percentage(self, percentage: int) -> None:
         """Set fan speed percentage."""
-        if percentage_val == 0:
+        if percentage == 0:
             await self.async_turn_off()
             return
 
-        speed = pct_util.percentage_to_speed(percentage_val, SPEED_COUNT)
+        speed = pct_util.percentage_to_speed(percentage, SPEED_COUNT)
         params: dict[str, Any] = {
             PARAM_FAN_SPEED: speed,
             PARAM_PWR_ON: True,
