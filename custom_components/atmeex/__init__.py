@@ -7,8 +7,8 @@ from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .api import AtmeexApi, AtmeexAuthError
-from .const import CONF_AUTH_METHOD, CONF_PHONE, CONF_PHONE_CODE, DOMAIN
+from .api import AtmeexApi, AtmeexApiError, AtmeexAuthError
+from .const import CONF_ADDRESS_ID, CONF_AUTH_METHOD, CONF_PHONE, DOMAIN
 from .coordinator import AtmeexCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,44 +35,58 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if access_token and refresh_token:
         api.restore_tokens(access_token, refresh_token)
     else:
-        # Re-authenticate with stored credentials
-        auth_method = entry.data.get(CONF_AUTH_METHOD)
-        try:
-            if auth_method == "email":
-                await api.async_login_email(
-                    email=entry.data[CONF_EMAIL],
-                    password=entry.data[CONF_PASSWORD],
-                )
-            elif auth_method == "phone":
-                await api.async_login_phone(
-                    phone=entry.data[CONF_PHONE],
-                    phone_code=entry.data[CONF_PHONE_CODE],
-                )
-        except AtmeexAuthError:
-            _LOGGER.error("Authentication failed, trigger reauth")
-            hass.async_create_task(
-                hass.config_entries.flow.async_init(
-                    DOMAIN,
-                    context={
-                        "source": "reauth",
-                        "entry_id": entry.entry_id,
-                    },
-                    data=entry.data,
-                )
+        # No tokens — need re-authentication
+        _LOGGER.warning("No tokens found, triggering reauth flow")
+        hass.async_create_task(
+            hass.config_entries.flow.async_init(
+                DOMAIN,
+                context={
+                    "source": "reauth",
+                    "entry_id": entry.entry_id,
+                },
+                data=entry.data,
             )
-            return False
+        )
+        return False
 
-    # Test connection
+    # Get address_id from entry data
+    address_id = entry.data.get(CONF_ADDRESS_ID)
+
+    # Test connection — verify auth works
     try:
-        await api.async_get_devices()
-    except Exception as err:
+        addresses = await api.async_get_addresses()
+        _LOGGER.info("Found %d addresses during setup", len(addresses))
+    except AtmeexAuthError:
+        # Token expired and refresh failed — trigger reauth
+        _LOGGER.warning("Token expired and refresh failed, triggering reauth")
         await api.async_close()
-        raise ConfigEntryNotReady(f"Cannot connect to Atmeex API: {err}") from err
+        hass.async_create_task(
+            hass.config_entries.flow.async_init(
+                DOMAIN,
+                context={
+                    "source": "reauth",
+                    "entry_id": entry.entry_id,
+                },
+                data=entry.data,
+            )
+        )
+        return False
+    except (AtmeexApiError, Exception) as err:
+        # Non-auth API error (e.g. 500, network issue) — log but continue setup.
+        # The coordinator will retry fetching devices later.
+        _LOGGER.warning(
+            "Could not fetch devices during setup (will retry via coordinator): %s", err
+        )
 
-    coordinator = AtmeexCoordinator(hass, api)
+    coordinator = AtmeexCoordinator(hass, api, address_id=address_id)
 
-    # Initial data fetch
-    await coordinator.async_config_entry_first_refresh()
+    # Initial data fetch — may fail if API returns errors, but still set up entry
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except Exception as err:
+        _LOGGER.warning(
+            "Initial data fetch failed (will retry): %s", err
+        )
 
     # Store tokens after successful refresh (they may have been updated)
     _async_update_entry_tokens(hass, entry, api)

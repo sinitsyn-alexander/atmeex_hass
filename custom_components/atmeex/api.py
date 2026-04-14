@@ -53,7 +53,7 @@ class AtmeexApi:
         headers: dict[str, str] = {"Content-Type": "application/json"}
 
         if authenticated and self._access_token:
-            headers["Authorization"] = self._access_token
+            headers["Authorization"] = f"Bearer {self._access_token}"
 
         _LOGGER.debug("API %s %s params=%s", method, url, params)
 
@@ -85,11 +85,9 @@ class AtmeexApi:
             content_type = response.headers.get("Content-Type", "")
             if "json" not in content_type:
                 _LOGGER.warning(
-                    "Unexpected Content-Type '%s' for %s %s, reading as text",
+                    "Unexpected Content-Type '%s' for %s %s",
                     content_type, method, url,
                 )
-                text = await response.text()
-                _LOGGER.debug("Response text: %s", text[:500])
                 return None
 
             return await response.json()
@@ -97,6 +95,8 @@ class AtmeexApi:
         except aiohttp.ClientError as err:
             _LOGGER.error("API request failed: %s", err)
             raise AtmeexApiError(f"Request failed: {err}") from err
+
+    # ── Auth methods ──────────────────────────────────────────────
 
     async def async_login_email(self, email: str, password: str) -> dict[str, Any]:
         """Authenticate with email and password."""
@@ -117,8 +117,7 @@ class AtmeexApi:
         """Send SMS verification code to phone number.
 
         Uses /auth/signup endpoint with grant_type=phone_code to trigger SMS.
-        Returns empty body on success (200 with text/html) — cannot use _request
-        because it expects JSON.
+        Returns empty body on success (200 with text/html).
         """
         session = await self._get_session()
         url = f"{API_BASE_URL}/auth/signup"
@@ -182,19 +181,66 @@ class AtmeexApi:
             _LOGGER.error("Token refresh failed, need re-authentication")
             raise
 
-    async def async_get_devices(self) -> list[dict[str, Any]]:
-        """Get list of devices with their current condition."""
+    # ── Hierarchy methods: addresses → rooms → devices ───────────
+
+    async def async_get_addresses(self) -> list[dict[str, Any]]:
+        """Get list of addresses for the authenticated user."""
+        try:
+            result = await self._request("GET", "/addresses")
+        except AtmeexAuthError:
+            _LOGGER.info("Token expired, trying to refresh...")
+            await self.async_refresh_tokens()
+            result = await self._request("GET", "/addresses")
+        return result if isinstance(result, list) else []
+
+    async def async_get_rooms(self, address_id: int) -> list[dict[str, Any]]:
+        """Get list of rooms for a given address."""
         try:
             result = await self._request(
-                "GET", "/devices", params={"with_condition": 1}
+                "GET", "/rooms", params={"address_id": address_id}
             )
         except AtmeexAuthError:
             _LOGGER.info("Token expired, trying to refresh...")
             await self.async_refresh_tokens()
             result = await self._request(
-                "GET", "/devices", params={"with_condition": 1}
+                "GET", "/rooms", params={"address_id": address_id}
             )
-        return result
+        return result if isinstance(result, list) else []
+
+    async def async_get_devices(
+        self,
+        address_id: int | None = None,
+        room_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Get list of devices with their current condition.
+
+        If address_id and room_id are provided, filters by them.
+        Otherwise returns all devices (may fail on server side).
+        """
+        params: dict[str, Any] = {"with_condition": 1}
+        if address_id is not None:
+            params["address_id"] = address_id
+        if room_id is not None:
+            params["room_id"] = room_id
+
+        try:
+            result = await self._request("GET", "/devices", params=params)
+            return result if isinstance(result, list) else []
+        except AtmeexAuthError:
+            _LOGGER.info("Token expired, trying to refresh...")
+            await self.async_refresh_tokens()
+            result = await self._request("GET", "/devices", params=params)
+            return result if isinstance(result, list) else []
+        except AtmeexApiError:
+            _LOGGER.warning("Failed to get devices with params %s", params)
+            # Fallback without condition
+            params.pop("with_condition", None)
+            try:
+                result = await self._request("GET", "/devices", params=params)
+                return result if isinstance(result, list) else []
+            except AtmeexApiError:
+                _LOGGER.error("Failed to get devices")
+                raise
 
     async def async_set_device_params(
         self, device_id: int, params: dict[str, Any]
@@ -223,6 +269,8 @@ class AtmeexApi:
             await self.async_refresh_tokens()
             result = await self._request("GET", f"/devices/{device_id}")
         return result
+
+    # ── Token management ──────────────────────────────────────────
 
     @property
     def access_token(self) -> str | None:

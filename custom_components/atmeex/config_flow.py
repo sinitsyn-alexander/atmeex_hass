@@ -14,6 +14,8 @@ from .api import AtmeexApi, AtmeexApiError, AtmeexAuthError
 from .const import (
     AUTH_METHOD_EMAIL,
     AUTH_METHOD_PHONE,
+    CONF_ADDRESS_ID,
+    CONF_ADDRESS_NAME,
     CONF_AUTH_METHOD,
     CONF_PHONE,
     CONF_PHONE_CODE,
@@ -27,12 +29,14 @@ class AtmeexConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Atmeex Airnanny."""
 
     VERSION = 1
-    MINOR_VERSION = 1
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
         """Initialize the config flow."""
         self._auth_method: str | None = None
         self._phone: str | None = None
+        self._api: AtmeexApi | None = None
+        self._addresses: list[dict[str, Any]] = []
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -75,23 +79,13 @@ class AtmeexConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     email=user_input[CONF_EMAIL],
                     password=user_input[CONF_PASSWORD],
                 )
-                # Get devices to verify connection
-                devices = await api.async_get_devices()
-                await api.async_close()
-
-                return self.async_create_entry(
-                    title=f"Atmeex ({user_input[CONF_EMAIL]})",
-                    data={
-                        CONF_AUTH_METHOD: AUTH_METHOD_EMAIL,
-                        CONF_EMAIL: user_input[CONF_EMAIL],
-                        CONF_PASSWORD: user_input[CONF_PASSWORD],
-                        "access_token": api.access_token,
-                        "refresh_token": api.tokens.get("refresh_token"),
-                    },
-                )
+                self._api = api
+                # Get addresses for selection
+                return await self._get_addresses_or_finish()
             except AtmeexAuthError:
                 errors["base"] = "invalid_auth"
-            except AtmeexApiError:
+            except AtmeexApiError as err:
+                _LOGGER.error("API error during email login: %s", err)
                 errors["base"] = "cannot_connect"
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
@@ -124,31 +118,12 @@ class AtmeexConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await api.async_close()
             except AtmeexApiError:
                 errors["base"] = "sms_send_failed"
-                return self.async_show_form(
-                    step_id="phone",
-                    data_schema=vol.Schema(
-                        {
-                            vol.Required(CONF_PHONE, default=self._phone): str,
-                        }
-                    ),
-                    errors=errors,
-                    description_placeholders={},
-                )
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception sending SMS")
                 errors["base"] = "unknown"
-                return self.async_show_form(
-                    step_id="phone",
-                    data_schema=vol.Schema(
-                        {
-                            vol.Required(CONF_PHONE, default=self._phone): str,
-                        }
-                    ),
-                    errors=errors,
-                    description_placeholders={},
-                )
-            # Proceed to the SMS code step
-            return await self.async_step_phone_code()
+
+            if not errors:
+                return await self.async_step_phone_code()
 
         return self.async_show_form(
             step_id="phone",
@@ -174,25 +149,9 @@ class AtmeexConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     phone=self._phone or "",
                     phone_code=user_input[CONF_PHONE_CODE],
                 )
-
-                # Try to get devices to verify connection, but don't block on failure
-                try:
-                    devices = await api.async_get_devices()
-                    _LOGGER.debug("Devices fetched successfully: %s", devices)
-                except (AtmeexApiError, AtmeexAuthError) as err:
-                    _LOGGER.warning("Could not fetch devices during setup (non-fatal): %s", err)
-
-                await api.async_close()
-
-                return self.async_create_entry(
-                    title=f"Atmeex ({self._phone})",
-                    data={
-                        CONF_AUTH_METHOD: AUTH_METHOD_PHONE,
-                        CONF_PHONE: self._phone,
-                        "access_token": api.access_token,
-                        "refresh_token": api.tokens.get("refresh_token"),
-                    },
-                )
+                self._api = api
+                # Get addresses for selection
+                return await self._get_addresses_or_finish()
             except AtmeexAuthError:
                 errors["base"] = "invalid_auth"
             except AtmeexApiError as err:
@@ -213,6 +172,84 @@ class AtmeexConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={"phone": self._phone or ""},
         )
 
+    async def _get_addresses_or_finish(self) -> FlowResult:
+        """Get addresses from API. If only one, auto-select. Otherwise, show selection."""
+        assert self._api is not None
+
+        try:
+            self._addresses = await self._api.async_get_addresses()
+        except (AtmeexApiError, Exception) as err:
+            _LOGGER.warning("Could not fetch addresses: %s", err)
+            self._addresses = []
+
+        await self._api.async_close()
+
+        if len(self._addresses) == 0:
+            return self.async_abort(reason="no_addresses")
+
+        if len(self._addresses) == 1:
+            # Auto-select single address
+            addr = self._addresses[0]
+            return self._create_entry(addr)
+
+        # Multiple addresses — show selection step
+        return await self.async_step_select_address()
+
+    async def async_step_select_address(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle address selection step."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            selected_id = user_input[CONF_ADDRESS_ID]
+            # Find the selected address
+            for addr in self._addresses:
+                if str(addr["id"]) == str(selected_id):
+                    return self._create_entry(addr)
+            errors["base"] = "unknown"
+
+        # Build address options dict
+        address_options = {
+            str(addr["id"]): addr["name"] for addr in self._addresses
+        }
+
+        return self.async_show_form(
+            step_id="select_address",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_ADDRESS_ID): vol.In(address_options),
+                }
+            ),
+            errors=errors,
+            description_placeholders={},
+        )
+
+    def _create_entry(self, address: dict[str, Any]) -> FlowResult:
+        """Create a config entry with the selected address and tokens."""
+        assert self._api is not None
+
+        title = f"Atmeex ({address['name']})"
+        auth_method = self._auth_method or AUTH_METHOD_EMAIL
+
+        data: dict[str, Any] = {
+            CONF_AUTH_METHOD: auth_method,
+            CONF_ADDRESS_ID: address["id"],
+            CONF_ADDRESS_NAME: address["name"],
+            "access_token": self._api.access_token,
+            "refresh_token": self._api.tokens.get("refresh_token"),
+        }
+
+        # Store credentials for reauth
+        if auth_method == AUTH_METHOD_EMAIL:
+            # Email credentials are in the flow but not stored in previous steps
+            # We don't have them here — reauth will ask again
+            pass
+        elif auth_method == AUTH_METHOD_PHONE:
+            data[CONF_PHONE] = self._phone
+
+        return self.async_create_entry(title=title, data=data)
+
     async def async_step_reauth(
         self, entry_data: dict[str, Any]
     ) -> FlowResult:
@@ -226,7 +263,7 @@ class AtmeexConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle re-authentication confirmation."""
         errors: dict[str, str] = {}
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-        
+
         if entry is None:
             return self.async_abort(reason="unknown")
 
@@ -268,5 +305,5 @@ class AtmeexConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors=errors,
             )
 
-        # Phone reauth
+        # Phone reauth — go to phone step
         return await self.async_step_phone()

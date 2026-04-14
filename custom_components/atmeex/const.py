@@ -6,6 +6,8 @@ CONF_PASSWORD = "password"
 CONF_PHONE = "phone"
 CONF_PHONE_CODE = "phone_code"
 CONF_AUTH_METHOD = "auth_method"
+CONF_ADDRESS_ID = "address_id"
+CONF_ADDRESS_NAME = "address_name"
 
 AUTH_METHOD_EMAIL = "email"
 AUTH_METHOD_PHONE = "phone"

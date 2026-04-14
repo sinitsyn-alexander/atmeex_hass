@@ -21,6 +21,7 @@ class AtmeexCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self,
         hass: HomeAssistant,
         api: AtmeexApi,
+        address_id: int | None = None,
         scan_interval: int = DEFAULT_SCAN_INTERVAL,
     ) -> None:
         """Initialize the coordinator."""
@@ -31,13 +32,18 @@ class AtmeexCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             update_interval=timedelta(seconds=scan_interval),
         )
         self.api = api
+        self.address_id = address_id
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         """Fetch data from API endpoint."""
         try:
-            devices = await self.api.async_get_devices()
+            devices = await self.api.async_get_devices(address_id=self.address_id)
         except AtmeexApiError as err:
             raise UpdateFailed(f"Error communicating with API: {err}") from err
+
+        if not devices or not isinstance(devices, list):
+            _LOGGER.debug("No devices returned from API")
+            return {}
 
         data: dict[str, dict[str, Any]] = {}
         for device in devices:

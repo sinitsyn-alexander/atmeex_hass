@@ -5,11 +5,11 @@
         "title": "Atmeex Airnanny",
         "description": "Выберите способ авторизации",
         "data": {
-          "auth_method": "Способ авторизации"
+          "auth_method": "Способ входа"
         }
       },
       "email": {
-        "title": "Авторизация по Email",
+        "title": "Вход по Email",
         "description": "Введите email и пароль от аккаунта Atmeex",
         "data": {
           "email": "Email",
@@ -17,22 +17,29 @@
         }
       },
       "phone": {
-        "title": "Авторизация по телефону",
-        "description": "Введите номер телефона, на который будет отправлен SMS-код",
+        "title": "Вход по телефону",
+        "description": "Введите номер телефона для отправки SMS-кода",
         "data": {
-          "phone": "Номер телефона"
+          "phone": "Телефон"
         }
       },
       "phone_code": {
-        "title": "Введите SMS-код",
+        "title": "Подтверждение телефона",
         "description": "Введите код из SMS, отправленный на номер {phone}",
         "data": {
-          "phone_code": "SMS-код"
+          "phone_code": "Код из SMS"
+        }
+      },
+      "select_address": {
+        "title": "Выбор адреса",
+        "description": "Выберите адрес, для которого хотите настроить устройства",
+        "data": {
+          "address_id": "Адрес"
         }
       },
       "reauth_confirm": {
         "title": "Повторная авторизация",
-        "description": "Ваш токен истёк. Пожалуйста, введите email и пароль заново.",
+        "description": "Введите email и пароль для повторной авторизации",
         "data": {
           "email": "Email",
           "password": "Пароль"
@@ -40,28 +47,14 @@
       }
     },
     "error": {
+      "invalid_auth": "Ошибка авторизации. Проверьте данные и попробуйте снова.",
       "cannot_connect": "Не удалось подключиться к серверу Atmeex",
-      "invalid_auth": "Ошибка аутентификации: неверный email, пароль или код",
-      "sms_send_failed": "Не удалось отправить SMS-код. Проверьте номер телефона.",
+      "sms_send_failed": "Не удалось отправить SMS-код",
       "unknown": "Непредвиденная ошибка"
     },
     "abort": {
-      "reauth_successful": "Повторная авторизация прошла успешно"
-    }
-  },
-  "entity": {
-    "climate": {
-      "atmeex": {
-        "state_attributes": {
-          "preset_mode": {
-            "state": {
-              "auto": "Авто",
-              "night": "Ночной",
-              "none": "Нет"
-            }
-          }
-        }
-      }
+      "no_addresses": "Не найдено адресов для вашего аккаунта. Добавьте адрес в приложении Atmeex.",
+      "reauth_successful": "Авторизация восстановлена успешно!"
     }
   }
 }
