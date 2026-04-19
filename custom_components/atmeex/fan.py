@@ -19,8 +19,8 @@ from .coordinator import AtmeexCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# Atmeex fan speed mapping (1-based from API)
-FAN_SPEEDS = [1, 2, 3]
+# Atmeex fan speed mapping (0-6 from API, 7 levels)
+FAN_SPEEDS = [0, 1, 2, 3, 4, 5, 6]
 SPEED_COUNT = len(FAN_SPEEDS)
 
 
@@ -87,10 +87,12 @@ class AtmeexFan(CoordinatorEntity[AtmeexCoordinator], FanEntity):
     @property
     def percentage(self) -> int | None:
         """Return current fan speed percentage."""
-        speed = self.device_data.get("fan_speed", 0)
-        if speed == 0:
+        if not self.is_on:
             return 0
-        return pct_util.speed_to_percentage(speed, SPEED_COUNT)
+        speed = self.device_data.get("fan_speed", 0)
+        if speed is None:
+            return 0
+        return pct_util.speed_to_percentage(speed + 1, SPEED_COUNT)
 
     @property
     def preset_mode(self) -> str | None:
@@ -108,7 +110,7 @@ class AtmeexFan(CoordinatorEntity[AtmeexCoordinator], FanEntity):
             await self.async_turn_off()
             return
 
-        speed = pct_util.percentage_to_speed(percentage, SPEED_COUNT)
+        speed = pct_util.percentage_to_speed(percentage, SPEED_COUNT) - 1
         params: dict[str, Any] = {
             PARAM_FAN_SPEED: speed,
             PARAM_PWR_ON: True,
@@ -140,7 +142,7 @@ class AtmeexFan(CoordinatorEntity[AtmeexCoordinator], FanEntity):
         if percentage is not None:
             params[PARAM_FAN_SPEED] = pct_util.percentage_to_speed(
                 percentage, SPEED_COUNT
-            )
+            ) - 1
         device_id = self.device_data.get("id")
         if device_id is not None:
             await self.coordinator.api.async_set_device_params(device_id, params)

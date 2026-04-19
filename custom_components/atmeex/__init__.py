@@ -91,6 +91,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Store tokens after successful refresh (they may have been updated)
     _async_update_entry_tokens(hass, entry, api)
 
+    # Register listener to persist tokens after every coordinator update
+    # (in case they were refreshed due to 401 during periodic polling)
+    entry.async_on_unload(
+        coordinator.async_add_listener(
+            lambda: _async_update_entry_tokens(hass, entry, api)
+        )
+    )
+
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,
         "coordinator": coordinator,
