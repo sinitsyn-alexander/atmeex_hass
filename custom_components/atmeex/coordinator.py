@@ -8,7 +8,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import AtmeexApi, AtmeexApiError
+from .api import AtmeexApi, AtmeexApiError, AtmeexAuthError
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,6 +21,7 @@ class AtmeexCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self,
         hass: HomeAssistant,
         api: AtmeexApi,
+        entry: Any,
         address_id: int | None = None,
         scan_interval: int = DEFAULT_SCAN_INTERVAL,
     ) -> None:
@@ -33,11 +34,30 @@ class AtmeexCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         )
         self.api = api
         self.address_id = address_id
+        self.entry = entry
+        self._reauth_triggered = False
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         """Fetch data from API endpoint."""
         try:
             devices = await self.api.async_get_devices(address_id=self.address_id)
+        except AtmeexAuthError as err:
+            if not self._reauth_triggered:
+                self._reauth_triggered = True
+                _LOGGER.error(
+                    "Authentication failed, triggering reauth flow: %s", err
+                )
+                self.hass.async_create_task(
+                    self.hass.config_entries.flow.async_init(
+                        DOMAIN,
+                        context={
+                            "source": "reauth",
+                            "entry_id": self.entry.entry_id,
+                        },
+                        data=dict(self.entry.data),
+                    )
+                )
+            raise UpdateFailed(f"Auth failed: {err}") from err
         except AtmeexApiError as err:
             raise UpdateFailed(f"Error communicating with API: {err}") from err
 

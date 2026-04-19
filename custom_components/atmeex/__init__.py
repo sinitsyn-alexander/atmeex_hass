@@ -49,6 +49,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         return False
 
+    # Set callback to persist tokens immediately after refresh (not only
+    # on coordinator listener, which may not fire on failed updates).
+    api.on_tokens_updated = lambda: _async_update_entry_tokens(hass, entry, api)
+
     # Get address_id from entry data
     address_id = entry.data.get(CONF_ADDRESS_ID)
 
@@ -78,7 +82,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "Could not fetch devices during setup (will retry via coordinator): %s", err
         )
 
-    coordinator = AtmeexCoordinator(hass, api, address_id=address_id)
+    coordinator = AtmeexCoordinator(hass, api, entry=entry, address_id=address_id)
 
     # Initial data fetch — may fail if API returns errors, but still set up entry
     try:

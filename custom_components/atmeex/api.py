@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Callable
 
 import aiohttp
 
@@ -31,6 +31,7 @@ class AtmeexApi:
         self._access_token: str | None = None
         self._refresh_token: str | None = None
         self._session: aiohttp.ClientSession | None = None
+        self.on_tokens_updated: Callable[[], None] | None = None
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
@@ -78,6 +79,8 @@ class AtmeexApi:
                 if authenticated and _retry_on_auth and self._refresh_token:
                     _LOGGER.info("Got 401, refreshing tokens and retrying...")
                     await self.async_refresh_tokens()
+                    if self.on_tokens_updated:
+                        self.on_tokens_updated()
                     return await self._request(
                         method, path,
                         data=data, params=params,
@@ -192,7 +195,8 @@ class AtmeexApi:
                 "POST", "/auth/signin", data=data, authenticated=False
             )
             self._access_token = result["access_token"]
-            self._refresh_token = result.get("refresh_token")
+            if result.get("refresh_token"):
+                self._refresh_token = result["refresh_token"]
             _LOGGER.info("Successfully refreshed tokens")
             return result
         except AtmeexAuthError:
