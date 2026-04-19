@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from homeassistant.components.fan import (
@@ -12,16 +13,17 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-import homeassistant.util.percentage as pct_util
+from homeassistant.util.percentage import (
+    percentage_to_ranged_value,
+    ranged_value_to_percentage,
+)
 
 from .const import DOMAIN, PARAM_FAN_SPEED, PARAM_PWR_ON
 from .coordinator import AtmeexCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# Atmeex fan speed mapping (0-6 from API, 7 levels)
-FAN_SPEEDS = [0, 1, 2, 3, 4, 5, 6]
-SPEED_COUNT = len(FAN_SPEEDS)
+SPEED_RANGE = (1, 7)
 
 
 async def async_setup_entry(
@@ -44,7 +46,7 @@ class AtmeexFan(CoordinatorEntity[AtmeexCoordinator], FanEntity):
     """Fan entity for Atmeex breather."""
 
     _attr_has_entity_name = True
-    _attr_speed_count = SPEED_COUNT
+    _attr_speed_count = 7
     _attr_supported_features = (
         FanEntityFeature.SET_SPEED
         | FanEntityFeature.PRESET_MODE
@@ -87,12 +89,10 @@ class AtmeexFan(CoordinatorEntity[AtmeexCoordinator], FanEntity):
     @property
     def percentage(self) -> int | None:
         """Return current fan speed percentage."""
-        if not self.is_on:
-            return 0
         speed = self.device_data.get("fan_speed", 0)
-        if speed is None:
+        if speed is None or speed == 0:
             return 0
-        return pct_util.speed_to_percentage(speed + 1, SPEED_COUNT)
+        return ranged_value_to_percentage(SPEED_RANGE, speed)
 
     @property
     def preset_mode(self) -> str | None:
@@ -110,7 +110,7 @@ class AtmeexFan(CoordinatorEntity[AtmeexCoordinator], FanEntity):
             await self.async_turn_off()
             return
 
-        speed = pct_util.percentage_to_speed(percentage, SPEED_COUNT) - 1
+        speed = math.ceil(percentage_to_ranged_value(SPEED_RANGE, percentage))
         params: dict[str, Any] = {
             PARAM_FAN_SPEED: speed,
             PARAM_PWR_ON: True,
@@ -140,9 +140,9 @@ class AtmeexFan(CoordinatorEntity[AtmeexCoordinator], FanEntity):
         """Turn on the fan."""
         params: dict[str, Any] = {PARAM_PWR_ON: True}
         if percentage is not None:
-            params[PARAM_FAN_SPEED] = pct_util.percentage_to_speed(
-                percentage, SPEED_COUNT
-            ) - 1
+            params[PARAM_FAN_SPEED] = math.ceil(
+                percentage_to_ranged_value(SPEED_RANGE, percentage)
+            )
         device_id = self.device_data.get("id")
         if device_id is not None:
             await self.coordinator.api.async_set_device_params(device_id, params)
