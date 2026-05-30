@@ -8,10 +8,11 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import AtmeexApi, AtmeexApiError, AtmeexAuthError
+from .api import AtmeexApi, AtmeexApiError, AtmeexAuthError, AtmeexTemporaryError
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+STALE_DATA_MAX_AGE_SECONDS = 15 * 60
 
 
 class AtmeexCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
@@ -36,6 +37,8 @@ class AtmeexCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self.address_id = address_id
         self.entry = entry
         self._reauth_triggered = False
+        self._last_success_data: dict[str, dict[str, Any]] = {}
+        self._last_success_monotonic: float | None = None
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         """Fetch data from API endpoint."""
@@ -58,6 +61,15 @@ class AtmeexCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     )
                 )
             raise UpdateFailed(f"Auth failed: {err}") from err
+        except AtmeexTemporaryError as err:
+            if self._last_success_monotonic is not None:
+                elapsed = self.hass.loop.time() - self._last_success_monotonic
+                if elapsed < STALE_DATA_MAX_AGE_SECONDS:
+                    _LOGGER.warning(
+                        "Using stale Atmeex data due to temporary API error: %s", err
+                    )
+                    return self._last_success_data
+            raise UpdateFailed(f"Temporary API error: {err}") from err
         except AtmeexApiError as err:
             raise UpdateFailed(f"Error communicating with API: {err}") from err
 
@@ -103,4 +115,6 @@ class AtmeexCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             }
 
         _LOGGER.debug("Updated data for %d devices", len(data))
+        self._last_success_data = data
+        self._last_success_monotonic = self.hass.loop.time()
         return data

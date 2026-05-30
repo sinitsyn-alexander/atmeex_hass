@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any, Callable
 
 import aiohttp
@@ -22,6 +23,10 @@ class AtmeexAuthError(AtmeexApiError):
     """Authentication error."""
 
 
+class AtmeexTemporaryError(AtmeexApiError):
+    """Temporary server-side error (usually 5xx)."""
+
+
 class AtmeexApi:
     """Atmeex Airnanny API client."""
 
@@ -32,6 +37,7 @@ class AtmeexApi:
         self._refresh_token: str | None = None
         self._session: aiohttp.ClientSession | None = None
         self.on_tokens_updated: Callable[[], None] | None = None
+        self._devices_fallback_cooldown_until: float = 0.0
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
@@ -88,6 +94,14 @@ class AtmeexApi:
                         _retry_on_auth=False,  # only retry once
                     )
                 raise AtmeexAuthError("Authentication failed")
+
+            if response.status == 403:
+                raise AtmeexAuthError("Authentication forbidden")
+
+            if response.status >= 500:
+                raise AtmeexTemporaryError(
+                    f"Server error {response.status} for {method} {path}"
+                )
 
             if response.status == 422:
                 resp_data = await response.json()
@@ -236,12 +250,23 @@ class AtmeexApi:
         try:
             result = await self._request("GET", "/devices", params=params)
             return result if isinstance(result, list) else []
-        except AtmeexApiError:
-            _LOGGER.warning("Failed to get devices with params %s", params)
-            # Fallback without condition
-            params.pop("with_condition", None)
-            result = await self._request("GET", "/devices", params=params)
-            return result if isinstance(result, list) else []
+        except AtmeexApiError as err:
+            _LOGGER.warning("Failed to get devices with params %s: %s", params, err)
+
+            # Avoid fallback storm when server is unstable: skip second request
+            # for a short period after a failed fallback attempt.
+            now = time.monotonic()
+            if now < self._devices_fallback_cooldown_until:
+                raise
+
+            fallback_params = dict(params)
+            fallback_params.pop("with_condition", None)
+            try:
+                result = await self._request("GET", "/devices", params=fallback_params)
+                return result if isinstance(result, list) else []
+            except AtmeexApiError:
+                self._devices_fallback_cooldown_until = now + 300
+                raise
 
     async def async_set_device_params(
         self, device_id: int, params: dict[str, Any]
