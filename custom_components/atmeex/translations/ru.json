@@ -1,0 +1,133 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Atmeex Airnanny",
+        "description": "Выберите способ авторизации",
+        "data": {
+          "auth_method": "Способ входа"
+        }
+      },
+      "email": {
+        "title": "Вход по почте",
+        "description": "Введите почту и пароль от аккаунта Atmeex",
+        "data": {
+          "email": "Почта",
+          "password": "Пароль"
+        }
+      },
+      "phone": {
+        "title": "Вход по телефону",
+        "description": "Введите номер телефона для отправки SMS-кода",
+        "data": {
+          "phone": "Номер телефона"
+        }
+      },
+      "phone_code": {
+        "title": "Подтверждение телефона",
+        "description": "Введите код из SMS, отправленный на номер {phone}",
+        "data": {
+          "phone_code": "Код из SMS"
+        }
+      },
+      "select_address": {
+        "title": "Выбор адреса",
+        "description": "Выберите адрес, для которого хотите настроить устройства",
+        "data": {
+          "address_id": "Адрес"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Повторная авторизация",
+        "description": "Введите почту и пароль для повторной авторизации",
+        "data": {
+          "email": "Почта",
+          "password": "Пароль"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Ошибка авторизации. Проверьте данные и попробуйте снова.",
+      "cannot_connect": "Не удалось подключиться к серверу Atmeex",
+      "sms_send_failed": "Не удалось отправить SMS-код",
+      "unknown": "Непредвиденная ошибка"
+    },
+    "abort": {
+      "no_addresses": "Не найдено адресов для вашего аккаунта. Добавьте адрес в приложении Atmeex.",
+      "reauth_successful": "Авторизация успешно восстановлена!"
+    }
+  },
+  "entity": {
+    "climate": {
+      "climate": {
+        "name": "Климат",
+        "state_attributes": {
+          "fan_mode": {
+            "state": {
+              "speed_1": "Скорость 1",
+              "speed_2": "Скорость 2",
+              "speed_3": "Скорость 3",
+              "speed_4": "Скорость 4",
+              "speed_5": "Скорость 5",
+              "speed_6": "Скорость 6",
+              "speed_7": "Скорость 7"
+            }
+          },
+          "preset_mode": {
+            "state": {
+              "manual": "Ручной режим",
+              "auto": "Autonanny",
+              "night": "Ночной режим"
+            }
+          }
+        }
+      }
+    },
+    "fan": {
+      "fan": {
+        "name": "Вентилятор",
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "manual": "Ручной режим",
+              "auto": "Autonanny",
+              "night": "Ночной режим"
+            }
+          }
+        }
+      }
+    },
+    "select": {
+      "damper": {
+        "name": "Режим заслонки",
+        "state": {
+          "supply": "Приточная вентиляция",
+          "recirculation": "Рециркуляция",
+          "mixed": "Смешанный режим",
+          "intake_valve": "Приточный клапан"
+        }
+      },
+      "humidifier": {
+        "name": "Увлажнитель",
+        "state": {
+          "off": "Выключен",
+          "level_1": "Уровень 1",
+          "level_2": "Уровень 2"
+        }
+      }
+    },
+    "switch": {
+      "night_mode": {
+        "name": "Ночной режим"
+      }
+    }
+  },
+  "selector": {
+    "auth_method": {
+      "options": {
+        "email": "Почта и пароль",
+        "phone": "Телефон и SMS-код"
+      }
+    }
+  }
+}

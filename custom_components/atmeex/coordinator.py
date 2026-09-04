@@ -108,8 +108,11 @@ class AtmeexCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 # Settings fields
                 "u_auto": settings.get("u_auto", False),
                 "u_night": settings.get("u_night", False),
+                "u_pwr_on": settings.get("u_pwr_on"),
                 "u_temp_room": settings.get("u_temp_room"),
                 "u_fan_speed": settings.get("u_fan_speed"),
+                "u_damp_pos": settings.get("u_damp_pos"),
+                "u_hum_stg": settings.get("u_hum_stg"),
                 "u_night_start": settings.get("u_night_start"),
                 "u_night_stop": settings.get("u_night_stop"),
             }

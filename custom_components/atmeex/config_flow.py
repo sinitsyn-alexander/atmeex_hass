@@ -9,6 +9,11 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .api import AtmeexApi, AtmeexApiError, AtmeexAuthError
 from .const import (
@@ -54,11 +59,14 @@ class AtmeexConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_AUTH_METHOD, default=AUTH_METHOD_EMAIL): vol.In(
-                        {
-                            AUTH_METHOD_EMAIL: "Email и пароль",
-                            AUTH_METHOD_PHONE: "Телефон и SMS-код",
-                        }
+                    vol.Required(
+                        CONF_AUTH_METHOD, default=AUTH_METHOD_EMAIL
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[AUTH_METHOD_EMAIL, AUTH_METHOD_PHONE],
+                            mode=SelectSelectorMode.LIST,
+                            translation_key="auth_method",
+                        )
                     ),
                 }
             ),
