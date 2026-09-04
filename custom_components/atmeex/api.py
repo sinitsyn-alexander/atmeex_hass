@@ -192,17 +192,13 @@ class AtmeexApi:
         return result
 
     async def async_refresh_tokens(self) -> dict[str, Any]:
-        """Refresh the access token using refresh token.
-
-        Sends both refresh_token and identity_token (old access_token).
-        """
+        """Refresh the access token using the refresh token."""
         if not self._refresh_token:
             raise AtmeexAuthError("No refresh token available")
 
         data = {
             "grant_type": "refresh_token",
             "refresh_token": self._refresh_token,
-            "identity_token": self._access_token,
         }
         try:
             result = await self._request(
@@ -250,6 +246,8 @@ class AtmeexApi:
         try:
             result = await self._request("GET", "/devices", params=params)
             return result if isinstance(result, list) else []
+        except AtmeexAuthError:
+            raise
         except AtmeexApiError as err:
             _LOGGER.warning("Failed to get devices with params %s: %s", params, err)
 
