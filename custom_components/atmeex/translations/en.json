@@ -84,8 +84,8 @@
       }
     },
     "select": {
-      "damper": {
-        "name": "Damper mode",
+      "on_damper": {
+        "name": "Damper when on",
         "state": {
           "supply": "Supply ventilation",
           "recirculation": "Recirculation",

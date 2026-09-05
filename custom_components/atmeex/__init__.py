@@ -5,7 +5,6 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
 
 from .api import AtmeexApi, AtmeexApiError, AtmeexAuthError
 from .const import CONF_ADDRESS_ID, CONF_AUTH_METHOD, CONF_PHONE, DOMAIN
@@ -84,13 +83,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = AtmeexCoordinator(hass, api, entry=entry, address_id=address_id)
 
-    # Initial data fetch — may fail if API returns errors, but still set up entry
-    try:
-        await coordinator.async_config_entry_first_refresh()
-    except Exception as err:
-        _LOGGER.warning(
-            "Initial data fetch failed (will retry): %s", err
-        )
+    await coordinator.async_config_entry_first_refresh()
 
     # Store tokens after successful refresh (they may have been updated)
     _async_update_entry_tokens(hass, entry, api)
@@ -138,6 +131,10 @@ def _async_update_entry_tokens(
     ):
         hass.config_entries.async_update_entry(
             entry,
-            data={**entry.data, "access_token": new_access, "refresh_token": new_refresh},
+            data={
+                **entry.data,
+                "access_token": new_access,
+                "refresh_token": new_refresh,
+            },
         )
         _LOGGER.debug("Updated stored tokens")

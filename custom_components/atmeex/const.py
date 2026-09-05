@@ -8,6 +8,7 @@ CONF_PHONE_CODE = "phone_code"
 CONF_AUTH_METHOD = "auth_method"
 CONF_ADDRESS_ID = "address_id"
 CONF_ADDRESS_NAME = "address_name"
+CONF_ON_DAMPER_POSITIONS = "on_damper_positions"
 CONF_OFF_DAMPER_POSITIONS = "off_damper_positions"
 
 AUTH_METHOD_EMAIL = "email"
@@ -15,6 +16,9 @@ AUTH_METHOD_PHONE = "phone"
 
 OFF_DAMPER_OPEN = "open"
 OFF_DAMPER_CLOSED = "closed"
+ON_DAMPER_SUPPLY = "supply"
+ON_DAMPER_MIXED = "mixed"
+ON_DAMPER_RECIRCULATION = "recirculation"
 
 API_BASE_URL = "https://api.iot.atmeex.com"
 
@@ -46,4 +50,4 @@ PARAM_NIGHT_STOP = "u_night_stop"
 PARAM_TIME_ZONE = "u_time_zone"
 
 # Scan interval
-DEFAULT_SCAN_INTERVAL = 30
+DEFAULT_SCAN_INTERVAL = 60

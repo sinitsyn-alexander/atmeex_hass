@@ -2,17 +2,23 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-import time
 from typing import Any, Callable
 
 import aiohttp
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import API_BASE_URL
 
 _LOGGER = logging.getLogger(__name__)
+
+API_HEADERS = {
+    "Accept": "application/json",
+    "User-Agent": "okhttp/3.14.9",
+}
 
 
 class AtmeexApiError(Exception):
@@ -24,7 +30,7 @@ class AtmeexAuthError(AtmeexApiError):
 
 
 class AtmeexTemporaryError(AtmeexApiError):
-    """Temporary server-side error (usually 5xx)."""
+    """Temporary server or network error."""
 
 
 class AtmeexApi:
@@ -32,18 +38,11 @@ class AtmeexApi:
 
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the API client."""
-        self._hass = hass
         self._access_token: str | None = None
         self._refresh_token: str | None = None
-        self._session: aiohttp.ClientSession | None = None
+        self._session = async_get_clientsession(hass)
+        self._refresh_lock = asyncio.Lock()
         self.on_tokens_updated: Callable[[], None] | None = None
-        self._devices_fallback_cooldown_until: float = 0.0
-
-    async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create aiohttp session."""
-        if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
-        return self._session
 
     async def _request(
         self,
@@ -60,72 +59,84 @@ class AtmeexApi:
         On 401 with _retry_on_auth=True, automatically refreshes tokens
         and retries the request once.
         """
-        session = await self._get_session()
         url = f"{API_BASE_URL}{path}"
-        headers: dict[str, str] = {"Content-Type": "application/json"}
+        headers = dict(API_HEADERS)
+        request_access_token = self._access_token
 
-        if authenticated and self._access_token:
-            headers["Authorization"] = f"Bearer {self._access_token}"
+        if authenticated and request_access_token:
+            headers["Authorization"] = f"Bearer {request_access_token}"
 
         _LOGGER.debug("API %s %s params=%s", method, url, params)
 
         try:
             async with asyncio.timeout(30):
-                response = await session.request(
+                async with self._session.request(
                     method,
                     url,
                     json=data,
                     params=params,
                     headers=headers,
-                )
-
-            _LOGGER.debug("Response status: %s for %s %s", response.status, method, url)
-
-            if response.status == 401:
-                if authenticated and _retry_on_auth and self._refresh_token:
-                    _LOGGER.info("Got 401, refreshing tokens and retrying...")
-                    await self.async_refresh_tokens()
-                    if self.on_tokens_updated:
-                        self.on_tokens_updated()
-                    return await self._request(
-                        method, path,
-                        data=data, params=params,
-                        authenticated=authenticated,
-                        _retry_on_auth=False,  # only retry once
-                    )
-                raise AtmeexAuthError("Authentication failed")
-
-            if response.status == 403:
-                raise AtmeexAuthError("Authentication forbidden")
-
-            if response.status >= 500:
-                raise AtmeexTemporaryError(
-                    f"Server error {response.status} for {method} {path}"
-                )
-
-            if response.status == 422:
-                resp_data = await response.json()
-                _LOGGER.error("Validation error: %s", resp_data)
-                raise AtmeexApiError(f"Validation error: {resp_data}")
-
-            response.raise_for_status()
-
-            if response.status == 204:
-                return None
-
-            content_type = response.headers.get("Content-Type", "")
-            if "json" not in content_type:
-                _LOGGER.warning(
-                    "Unexpected Content-Type '%s' for %s %s",
-                    content_type, method, url,
-                )
-                return None
-
-            return await response.json()
-
+                ) as response:
+                    status = response.status
+                    response_text = await response.text()
+        except TimeoutError as err:
+            _LOGGER.warning("API request timed out: %s %s", method, url)
+            raise AtmeexTemporaryError(f"Request timed out: {method} {path}") from err
         except aiohttp.ClientError as err:
-            _LOGGER.error("API request failed: %s", err)
-            raise AtmeexApiError(f"Request failed: {err}") from err
+            _LOGGER.warning("API request failed: %s", err)
+            raise AtmeexTemporaryError(f"Request failed: {err}") from err
+
+        _LOGGER.debug("Response status: %s for %s %s", status, method, url)
+
+        if status == 401:
+            if authenticated and _retry_on_auth and self._refresh_token:
+                async with self._refresh_lock:
+                    if self._access_token == request_access_token:
+                        _LOGGER.info("Got 401, refreshing tokens and retrying")
+                        await self.async_refresh_tokens()
+                        if self.on_tokens_updated:
+                            self.on_tokens_updated()
+                return await self._request(
+                    method,
+                    path,
+                    data=data,
+                    params=params,
+                    authenticated=authenticated,
+                    _retry_on_auth=False,
+                )
+            raise AtmeexAuthError("Authentication failed")
+
+        if status == 403:
+            raise AtmeexAuthError("Authentication forbidden")
+
+        if status == 429 or status >= 500:
+            raise AtmeexTemporaryError(
+                f"Server error {status} for {method} {path}"
+            )
+
+        if status == 422:
+            try:
+                response_data = json.loads(response_text)
+            except json.JSONDecodeError:
+                response_data = response_text
+            _LOGGER.error("Validation error: %s", response_data)
+            raise AtmeexApiError(f"Validation error: {response_data}")
+
+        if status >= 400:
+            raise AtmeexApiError(
+                f"Request failed with status {status} for {method} {path}"
+            )
+
+        if status == 204 or not response_text:
+            return None
+
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError as err:
+            _LOGGER.warning("Invalid JSON response for %s %s", method, url)
+            raise AtmeexTemporaryError(
+                f"Invalid response for {method} {path}"
+            ) from err
 
     # ── Auth methods ──────────────────────────────────────────────
 
@@ -150,31 +161,29 @@ class AtmeexApi:
         Uses /auth/signup endpoint with grant_type=phone_code to trigger SMS.
         Returns empty body on success (200 with text/html).
         """
-        session = await self._get_session()
         url = f"{API_BASE_URL}/auth/signup"
         data = {
             "grant_type": "phone_code",
             "phone": phone,
         }
-        headers = {"Content-Type": "application/json"}
-
         _LOGGER.debug("Sending SMS code to %s via POST %s", phone, url)
 
         try:
             async with asyncio.timeout(30):
-                response = await session.post(url, json=data, headers=headers)
-
-            if response.status == 422:
-                resp_data = await response.json()
-                _LOGGER.error("SMS send validation error: %s", resp_data)
-                raise AtmeexApiError(f"Validation error: {resp_data}")
-
-            response.raise_for_status()
+                async with self._session.post(
+                    url, json=data, headers=API_HEADERS
+                ) as response:
+                    response_text = await response.text()
+                    if response.status == 422:
+                        raise AtmeexApiError(
+                            f"Validation error: {response_text}"
+                        )
+                    response.raise_for_status()
             _LOGGER.info("SMS code sent to %s", phone)
 
-        except aiohttp.ClientError as err:
-            _LOGGER.error("SMS send request failed: %s", err)
-            raise AtmeexApiError(f"SMS send failed: {err}") from err
+        except (TimeoutError, aiohttp.ClientError) as err:
+            _LOGGER.warning("SMS send request failed: %s", err)
+            raise AtmeexTemporaryError(f"SMS send failed: {err}") from err
 
     async def async_login_phone(self, phone: str, phone_code: str) -> dict[str, Any]:
         """Authenticate with phone number and SMS code."""
@@ -227,44 +236,16 @@ class AtmeexApi:
         )
         return result if isinstance(result, list) else []
 
-    async def async_get_devices(
-        self,
-        address_id: int | None = None,
-        room_id: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """Get list of devices with their current condition.
-
-        If address_id and room_id are provided, filters by them.
-        Otherwise returns all devices (may fail on server side).
-        """
-        params: dict[str, Any] = {"with_condition": 1}
-        if address_id is not None:
-            params["address_id"] = address_id
-        if room_id is not None:
-            params["room_id"] = room_id
-
-        try:
-            result = await self._request("GET", "/devices", params=params)
-            return result if isinstance(result, list) else []
-        except AtmeexAuthError:
-            raise
-        except AtmeexApiError as err:
-            _LOGGER.warning("Failed to get devices with params %s: %s", params, err)
-
-            # Avoid fallback storm when server is unstable: skip second request
-            # for a short period after a failed fallback attempt.
-            now = time.monotonic()
-            if now < self._devices_fallback_cooldown_until:
-                raise
-
-            fallback_params = dict(params)
-            fallback_params.pop("with_condition", None)
-            try:
-                result = await self._request("GET", "/devices", params=fallback_params)
-                return result if isinstance(result, list) else []
-            except AtmeexApiError:
-                self._devices_fallback_cooldown_until = now + 300
-                raise
+    async def async_get_devices(self) -> list[dict[str, Any]]:
+        """Get all devices, including their current condition and settings."""
+        # The known-working atmeexpy client uses plain /devices. Query variants
+        # are less stable and the unfiltered response already includes all data.
+        result = await self._request("GET", "/devices")
+        if isinstance(result, list):
+            return result
+        if isinstance(result, dict) and isinstance(result.get("devices"), list):
+            return result["devices"]
+        raise AtmeexTemporaryError("Unexpected devices response")
 
     async def async_set_device_params(
         self, device_id: int, params: dict[str, Any]
@@ -301,7 +282,4 @@ class AtmeexApi:
         self._refresh_token = refresh_token
 
     async def async_close(self) -> None:
-        """Close the API session."""
-        if self._session and not self._session.closed:
-            await self._session.close()
-            self._session = None
+        """Leave the Home Assistant-managed API session open."""

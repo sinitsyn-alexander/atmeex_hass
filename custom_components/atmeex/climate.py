@@ -18,8 +18,12 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     CONF_OFF_DAMPER_POSITIONS,
+    CONF_ON_DAMPER_POSITIONS,
     DOMAIN,
     OFF_DAMPER_CLOSED,
+    ON_DAMPER_MIXED,
+    ON_DAMPER_RECIRCULATION,
+    ON_DAMPER_SUPPLY,
     PARAM_AUTO,
     PARAM_DAMP_POS,
     PARAM_FAN_SPEED,
@@ -162,6 +166,28 @@ class AtmeexClimate(CoordinatorEntity[AtmeexCoordinator], ClimateEntity):
             return PRESET_AUTONANNY
         return PRESET_MANUAL
 
+    @property
+    def _on_damper_position(self) -> int:
+        """Return the configured damper position for the powered-on state."""
+        positions = self.coordinator.entry.options.get(
+            CONF_ON_DAMPER_POSITIONS, {}
+        )
+        configured_position = {
+            ON_DAMPER_SUPPLY: 0,
+            ON_DAMPER_MIXED: 1,
+            ON_DAMPER_RECIRCULATION: 2,
+        }.get(positions.get(self._device_id))
+        if configured_position is not None:
+            return configured_position
+
+        if not self.device_data.get("pwr_on", False):
+            return 0
+
+        current_position = self.device_data.get("u_damp_pos")
+        if current_position is None:
+            current_position = self.device_data.get("damp_pos")
+        return current_position if current_position in (0, 1, 2) else 0
+
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode."""
         params: dict[str, Any] = {}
@@ -178,9 +204,11 @@ class AtmeexClimate(CoordinatorEntity[AtmeexCoordinator], ClimateEntity):
             )
         elif hvac_mode == HVACMode.COOL:
             params[PARAM_PWR_ON] = True
+            params[PARAM_DAMP_POS] = self._on_damper_position
             params[PARAM_TEMP_ROOM] = HEATER_DISABLED
         elif hvac_mode == HVACMode.HEAT:
             params[PARAM_PWR_ON] = True
+            params[PARAM_DAMP_POS] = self._on_damper_position
             params[PARAM_TEMP_ROOM] = int(self._last_target_temperature * 10)
         else:
             return
@@ -197,6 +225,7 @@ class AtmeexClimate(CoordinatorEntity[AtmeexCoordinator], ClimateEntity):
             params: dict[str, Any] = {
                 PARAM_TEMP_ROOM: int(temperature * 10),
                 PARAM_PWR_ON: True,
+                PARAM_DAMP_POS: self._on_damper_position,
             }
             self._last_target_temperature = temperature
             device_id = self.device_data.get("id")
@@ -212,6 +241,7 @@ class AtmeexClimate(CoordinatorEntity[AtmeexCoordinator], ClimateEntity):
         params: dict[str, Any] = {
             PARAM_FAN_SPEED: FAN_MODES.index(fan_mode),
             PARAM_PWR_ON: True,
+            PARAM_DAMP_POS: self._on_damper_position,
         }
         device_id = self.device_data.get("id")
         if device_id is not None:

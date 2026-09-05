@@ -6,6 +6,7 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import AtmeexApi, AtmeexApiError, AtmeexAuthError, AtmeexTemporaryError
@@ -13,6 +14,7 @@ from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 STALE_DATA_MAX_AGE_SECONDS = 15 * 60
+ROOM_IDS_REFRESH_SECONDS = 60 * 60
 
 
 class AtmeexCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
@@ -36,31 +38,25 @@ class AtmeexCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self.api = api
         self.address_id = address_id
         self.entry = entry
-        self._reauth_triggered = False
+        self._room_ids: set[str] | None = None
+        self._room_ids_refreshed_at: float | None = None
         self._last_success_data: dict[str, dict[str, Any]] = {}
         self._last_success_monotonic: float | None = None
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         """Fetch data from API endpoint."""
         try:
-            devices = await self.api.async_get_devices(address_id=self.address_id)
+            now = self.hass.loop.time()
+            if self.address_id is not None and (
+                self._room_ids_refreshed_at is None
+                or now - self._room_ids_refreshed_at >= ROOM_IDS_REFRESH_SECONDS
+            ):
+                rooms = await self.api.async_get_rooms(self.address_id)
+                self._room_ids = {str(room["id"]) for room in rooms if "id" in room}
+                self._room_ids_refreshed_at = now
+            devices = await self.api.async_get_devices()
         except AtmeexAuthError as err:
-            if not self._reauth_triggered:
-                self._reauth_triggered = True
-                _LOGGER.error(
-                    "Authentication failed, triggering reauth flow: %s", err
-                )
-                self.hass.async_create_task(
-                    self.hass.config_entries.flow.async_init(
-                        DOMAIN,
-                        context={
-                            "source": "reauth",
-                            "entry_id": self.entry.entry_id,
-                        },
-                        data=dict(self.entry.data),
-                    )
-                )
-            raise UpdateFailed(f"Auth failed: {err}") from err
+            raise ConfigEntryAuthFailed(str(err)) from err
         except AtmeexTemporaryError as err:
             if self._last_success_monotonic is not None:
                 elapsed = self.hass.loop.time() - self._last_success_monotonic
@@ -72,6 +68,13 @@ class AtmeexCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             raise UpdateFailed(f"Temporary API error: {err}") from err
         except AtmeexApiError as err:
             raise UpdateFailed(f"Error communicating with API: {err}") from err
+
+        if self._room_ids is not None:
+            devices = [
+                device
+                for device in devices
+                if str(device.get("room_id")) in self._room_ids
+            ]
 
         if not devices or not isinstance(devices, list):
             _LOGGER.debug("No devices returned from API")
