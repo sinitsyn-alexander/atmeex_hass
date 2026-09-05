@@ -15,7 +15,6 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
     Platform.CLIMATE,
-    Platform.FAN,
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
     Platform.SELECT,

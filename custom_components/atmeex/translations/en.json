@@ -83,28 +83,13 @@
         }
       }
     },
-    "fan": {
-      "fan": {
-        "name": "Fan",
-        "state_attributes": {
-          "preset_mode": {
-            "state": {
-              "manual": "Manual",
-              "auto": "Autonanny",
-              "night": "Night mode"
-            }
-          }
-        }
-      }
-    },
     "select": {
       "damper": {
         "name": "Damper mode",
         "state": {
           "supply": "Supply ventilation",
           "recirculation": "Recirculation",
-          "mixed": "Mixed mode",
-          "intake_valve": "Intake valve"
+          "mixed": "Mixed mode"
         }
       },
       "humidifier": {
@@ -113,6 +98,13 @@
           "off": "Off",
           "level_1": "Level 1",
           "level_2": "Level 2"
+        }
+      },
+      "off_damper": {
+        "name": "Damper when off",
+        "state": {
+          "open": "Leave open",
+          "closed": "Close"
         }
       }
     },

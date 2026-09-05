@@ -5,11 +5,6 @@
         "default": "mdi:air-conditioner"
       }
     },
-    "fan": {
-      "atmeex": {
-        "default": "mdi:fan"
-      }
-    },
     "sensor": {
       "co2": {
         "default": "mdi:molecule-co2"

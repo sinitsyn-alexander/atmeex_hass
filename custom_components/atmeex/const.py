@@ -8,9 +8,13 @@ CONF_PHONE_CODE = "phone_code"
 CONF_AUTH_METHOD = "auth_method"
 CONF_ADDRESS_ID = "address_id"
 CONF_ADDRESS_NAME = "address_name"
+CONF_OFF_DAMPER_POSITIONS = "off_damper_positions"
 
 AUTH_METHOD_EMAIL = "email"
 AUTH_METHOD_PHONE = "phone"
+
+OFF_DAMPER_OPEN = "open"
+OFF_DAMPER_CLOSED = "closed"
 
 API_BASE_URL = "https://api.iot.atmeex.com"
 

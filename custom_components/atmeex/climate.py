@@ -12,12 +12,16 @@ from homeassistant.components.climate import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    CONF_OFF_DAMPER_POSITIONS,
     DOMAIN,
+    OFF_DAMPER_CLOSED,
     PARAM_AUTO,
+    PARAM_DAMP_POS,
     PARAM_FAN_SPEED,
     PARAM_NIGHT,
     PARAM_PWR_ON,
@@ -43,9 +47,21 @@ async def async_setup_entry(
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
 
-    entities = []
-    for device_id, device_data in coordinator.data.items():
-        entities.append(AtmeexClimate(coordinator, device_id))
+    entity_registry = er.async_get(hass)
+    for registry_entry in er.async_entries_for_config_entry(
+        entity_registry, entry.entry_id
+    ):
+        if (
+            registry_entry.domain == "fan"
+            and registry_entry.platform == DOMAIN
+            and registry_entry.unique_id.startswith("atmeex_")
+            and registry_entry.unique_id.endswith("_fan")
+        ):
+            entity_registry.async_remove(registry_entry.entity_id)
+
+    entities = [
+        AtmeexClimate(coordinator, device_id) for device_id in coordinator.data
+    ]
 
     async_add_entities(entities)
 
@@ -58,7 +74,7 @@ class AtmeexClimate(CoordinatorEntity[AtmeexCoordinator], ClimateEntity):
     _attr_target_temperature_step = 0.5
     _attr_min_temp = 10.0
     _attr_max_temp = 30.0
-    _attr_hvac_modes = [HVACMode.OFF, HVACMode.FAN_ONLY, HVACMode.HEAT]
+    _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
     _attr_fan_modes = FAN_MODES
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
@@ -125,7 +141,7 @@ class AtmeexClimate(CoordinatorEntity[AtmeexCoordinator], ClimateEntity):
         if not data.get("pwr_on", False):
             return HVACMode.OFF
         if data.get("u_temp_room") == HEATER_DISABLED:
-            return HVACMode.FAN_ONLY
+            return HVACMode.COOL
         return HVACMode.HEAT
 
     @property
@@ -152,7 +168,15 @@ class AtmeexClimate(CoordinatorEntity[AtmeexCoordinator], ClimateEntity):
 
         if hvac_mode == HVACMode.OFF:
             params[PARAM_PWR_ON] = False
-        elif hvac_mode == HVACMode.FAN_ONLY:
+            off_damper_positions = self.coordinator.entry.options.get(
+                CONF_OFF_DAMPER_POSITIONS, {}
+            )
+            params[PARAM_DAMP_POS] = (
+                2
+                if off_damper_positions.get(self._device_id) == OFF_DAMPER_CLOSED
+                else 0
+            )
+        elif hvac_mode == HVACMode.COOL:
             params[PARAM_PWR_ON] = True
             params[PARAM_TEMP_ROOM] = HEATER_DISABLED
         elif hvac_mode == HVACMode.HEAT:
@@ -209,8 +233,8 @@ class AtmeexClimate(CoordinatorEntity[AtmeexCoordinator], ClimateEntity):
             await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self) -> None:
-        """Turn on the breather in ventilation mode."""
-        await self.async_set_hvac_mode(HVACMode.FAN_ONLY)
+        """Turn on the breather without heating."""
+        await self.async_set_hvac_mode(HVACMode.COOL)
 
     async def async_turn_off(self) -> None:
         """Turn off the breather."""

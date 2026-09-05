@@ -83,28 +83,13 @@
         }
       }
     },
-    "fan": {
-      "fan": {
-        "name": "Вентилятор",
-        "state_attributes": {
-          "preset_mode": {
-            "state": {
-              "manual": "Ручной режим",
-              "auto": "Autonanny",
-              "night": "Ночной режим"
-            }
-          }
-        }
-      }
-    },
     "select": {
       "damper": {
         "name": "Режим заслонки",
         "state": {
           "supply": "Приточная вентиляция",
           "recirculation": "Рециркуляция",
-          "mixed": "Смешанный режим",
-          "intake_valve": "Приточный клапан"
+          "mixed": "Смешанный режим"
         }
       },
       "humidifier": {
@@ -113,6 +98,13 @@
           "off": "Выключен",
           "level_1": "Уровень 1",
           "level_2": "Уровень 2"
+        }
+      },
+      "off_damper": {
+        "name": "Заслонка при выключении",
+        "state": {
+          "open": "Оставлять открытой",
+          "closed": "Закрывать"
         }
       }
     },

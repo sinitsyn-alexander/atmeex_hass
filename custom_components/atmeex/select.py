@@ -5,23 +5,32 @@ from typing import Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, PARAM_DAMP_POS, PARAM_HUM_STG, PARAM_PWR_ON
+from .const import (
+    CONF_OFF_DAMPER_POSITIONS,
+    DOMAIN,
+    OFF_DAMPER_CLOSED,
+    OFF_DAMPER_OPEN,
+    PARAM_DAMP_POS,
+    PARAM_HUM_STG,
+    PARAM_PWR_ON,
+)
 from .coordinator import AtmeexCoordinator
 
 DAMPER_SUPPLY = "supply"
 DAMPER_RECIRCULATION = "recirculation"
 DAMPER_MIXED = "mixed"
-DAMPER_INTAKE_VALVE = "intake_valve"
 DAMPER_OPTIONS = [
     DAMPER_SUPPLY,
     DAMPER_RECIRCULATION,
     DAMPER_MIXED,
-    DAMPER_INTAKE_VALVE,
 ]
+
+OFF_DAMPER_OPTIONS = [OFF_DAMPER_OPEN, OFF_DAMPER_CLOSED]
 
 HUMIDIFIER_OFF = "off"
 HUMIDIFIER_LEVEL_1 = "level_1"
@@ -40,6 +49,7 @@ async def async_setup_entry(
     for device_id in coordinator.data:
         entities.append(AtmeexDamperSelect(coordinator, device_id))
         entities.append(AtmeexHumidifierSelect(coordinator, device_id))
+        entities.append(AtmeexOffDamperSelect(coordinator, device_id))
     async_add_entities(entities)
 
 
@@ -84,12 +94,11 @@ class AtmeexDamperSelect(AtmeexSelectBase):
 
     @property
     def current_option(self) -> str | None:
-        power = self.device_data.get("pwr_on", False)
         position = self.device_data.get("u_damp_pos")
         if position is None:
             position = self.device_data.get("damp_pos")
         if position == 0:
-            return DAMPER_SUPPLY if power else DAMPER_INTAKE_VALVE
+            return DAMPER_SUPPLY
         if position == 1:
             return DAMPER_MIXED
         if position == 2:
@@ -97,10 +106,6 @@ class AtmeexDamperSelect(AtmeexSelectBase):
         return None
 
     async def async_select_option(self, option: str) -> None:
-        if option == DAMPER_INTAKE_VALVE:
-            await self._async_set_params({PARAM_DAMP_POS: 0, PARAM_PWR_ON: False})
-            return
-
         positions = {
             DAMPER_SUPPLY: 0,
             DAMPER_MIXED: 1,
@@ -145,3 +150,42 @@ class AtmeexHumidifierSelect(AtmeexSelectBase):
         level = levels.get(option)
         if level is not None:
             await self._async_set_params({PARAM_HUM_STG: level})
+
+
+class AtmeexOffDamperSelect(AtmeexSelectBase):
+    """Select the damper position used when the breather is turned off."""
+
+    _attr_options = OFF_DAMPER_OPTIONS
+    _attr_icon = "mdi:valve"
+    _attr_translation_key = "off_damper"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: AtmeexCoordinator, device_id: str) -> None:
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"atmeex_{device_id}_off_damper"
+
+    @property
+    def current_option(self) -> str:
+        positions = self.coordinator.entry.options.get(
+            CONF_OFF_DAMPER_POSITIONS, {}
+        )
+        option = positions.get(self._device_id, OFF_DAMPER_OPEN)
+        return option if option in OFF_DAMPER_OPTIONS else OFF_DAMPER_OPEN
+
+    async def async_select_option(self, option: str) -> None:
+        if option not in OFF_DAMPER_OPTIONS:
+            return
+
+        entry = self.coordinator.entry
+        options = dict(entry.options)
+        positions = dict(options.get(CONF_OFF_DAMPER_POSITIONS, {}))
+        positions[self._device_id] = option
+        options[CONF_OFF_DAMPER_POSITIONS] = positions
+        self.coordinator.hass.config_entries.async_update_entry(
+            entry, options=options
+        )
+
+        if not self.device_data.get("pwr_on", False):
+            await self._async_set_params(
+                {PARAM_DAMP_POS: 2 if option == OFF_DAMPER_CLOSED else 0}
+            )
