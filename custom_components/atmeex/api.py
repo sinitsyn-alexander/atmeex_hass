@@ -19,6 +19,7 @@ API_HEADERS = {
     "Accept": "application/json",
     "User-Agent": "okhttp/3.14.9",
 }
+COMMAND_SETTLE_DELAY_SECONDS = 2
 
 
 class AtmeexApiError(Exception):
@@ -236,11 +237,15 @@ class AtmeexApi:
         )
         return result if isinstance(result, list) else []
 
-    async def async_get_devices(self) -> list[dict[str, Any]]:
+    async def async_get_devices(
+        self, address_id: int | None = None
+    ) -> list[dict[str, Any]]:
         """Get all devices, including their current condition and settings."""
-        # The known-working atmeexpy client uses plain /devices. Query variants
-        # are less stable and the unfiltered response already includes all data.
-        result = await self._request("GET", "/devices")
+        params: dict[str, Any] = {"with_condition": 1}
+        if address_id is not None:
+            params["address_id"] = address_id
+
+        result = await self._request("GET", "/devices", params=params)
         if isinstance(result, list):
             return result
         if isinstance(result, dict) and isinstance(result.get("devices"), list):
@@ -251,9 +256,11 @@ class AtmeexApi:
         self, device_id: int, params: dict[str, Any]
     ) -> dict[str, Any]:
         """Set device parameters (control device)."""
-        return await self._request(
+        result = await self._request(
             "PUT", f"/devices/{device_id}/params", data=params
         )
+        await asyncio.sleep(COMMAND_SETTLE_DELAY_SECONDS)
+        return result
 
     async def async_get_device(
         self, device_id: int
